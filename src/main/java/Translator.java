@@ -8,8 +8,14 @@ import java.awt.Robot;
 import java.awt.image.BufferedImage;
 import java.awt.Rectangle;
 import java.io.File;
+import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 
 import javax.imageio.ImageIO;
+
+import org.bytedeco.javacpp.*;
+import static org.bytedeco.javacpp.lept.*;
+import static org.bytedeco.javacpp.tesseract.*;
 
 public class Translator {
     public static void main(String[] args) {
@@ -27,7 +33,9 @@ public class Translator {
         frame.setVisible( true );
         try {
             while(true) {
-                captureImage();
+                //captureImage();
+                String result = translate();
+                System.out.println(result);
                 Thread.sleep(5000); 	
         }
         } catch(Exception e) {
@@ -53,5 +61,30 @@ public class Translator {
 		finally {
 			imageGraphics.dispose();
 		}
+    }
+
+    public static String translate() throws UnsupportedEncodingException {
+        BytePointer outText;
+
+        TessBaseAPI api = new TessBaseAPI();
+        // Initialize tesseract-ocr with English, without specifying tessdata path
+        if (api.Init(null, "jpn1") != 0) {
+            System.err.println("Could not initialize tesseract.");
+            System.exit(1);
+        }
+
+        // Open input image with leptonica library
+        PIX image = pixRead("screen.png");
+        api.SetImage(image);
+        // Get OCR result
+        outText = api.GetUTF8Text();
+        String result = outText.getString("UTF-8");
+
+        // Destroy used object and release memory
+        api.End();
+        outText.deallocate();
+        pixDestroy(image);
+
+        return result;
     }
 }

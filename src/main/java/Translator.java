@@ -1,12 +1,7 @@
-import javax.swing.JFrame;
-import javax.swing.JLabel;
+import java.awt.*;
+import java.awt.event.*;
+import javax.swing.*;
 
-import java.awt.Graphics2D;
-import java.awt.GraphicsDevice;
-import java.awt.MouseInfo;
-import java.awt.Robot;
-import java.awt.image.BufferedImage;
-import java.awt.Rectangle;
 import java.io.File;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
@@ -16,6 +11,7 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.io.FileInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.nio.charset.Charset;
 import java.net.URLEncoder;
@@ -27,6 +23,13 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.Header;
 import org.apache.http.util.EntityUtils;
+import org.apache.http.protocol.HTTP;
+
+import com.squareup.okhttp.OkHttpClient;
+import com.squareup.okhttp.Request;
+import com.squareup.okhttp.Response;
+
+import com.google.gson.Gson;
 
 /*
 import javax.imageio.ImageIO;
@@ -37,35 +40,78 @@ import static org.bytedeco.javacpp.tesseract.*;*/
 
 public class Translator {
     public static void main(String[] args) {
-        JFrame frame = new JFrame("Hello!!");
+        try{
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch(Exception e) {
+
+        }
+
+        final JFrame frame = new JFrame("Hello!!");
 
         // Set's the window to be "always on top"
         frame.setAlwaysOnTop( true );
         
         frame.setTitle("Translator");
         frame.setLocationByPlatform(true);
-        frame.add(new JLabel("Isn't this annoying?"));
+        frame.setLayout(new BorderLayout());
+        JTextArea translationArea = new JTextArea(11, 50);
+        JScrollPane translationScrollPane = new JScrollPane(translationArea);
+        translationScrollPane.setPreferredSize(new Dimension(600, 200));
+        JTextArea originalArea = new JTextArea(11, 50);
+        final JScrollPane originalScrollPane = new JScrollPane(originalArea);
+        originalScrollPane.setPreferredSize(new Dimension(600, 200));
+        frame.add(translationScrollPane, BorderLayout.PAGE_START);
+        frame.add(originalScrollPane, BorderLayout.PAGE_END);
+
+        JButton b = new JButton("Show/Hide");
+        b.addActionListener(new ActionListener(){
+            public void actionPerformed(ActionEvent e){
+                if(originalScrollPane.isVisible()) {
+                    originalScrollPane.setVisible(false);
+                } else {
+                    originalScrollPane.setVisible(true);
+                }
+                frame.pack();
+            }
+        });
+        frame.add(b, BorderLayout.LINE_END);
+
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         //frame.setUndecorated(true);
         frame.pack();
         frame.setVisible(true);
-        //File file = new File("D:\\ProgramFiles\\BNO\\GundamOnline\\chat\\2017_03_23(Thu).log");
         File file = getLatestFilefromDir("D:\\ProgramFiles\\BNO\\GundamOnline\\chat");
         
+        Gson gson = new Gson();
         try {
-            BufferedWriter bw = new BufferedWriter(new FileWriter("test.txt"));
+            //BufferedWriter bw = new BufferedWriter(new FileWriter("test.txt"));
+            String result, chat, originalChat, nameAndText, translated;
+            String[] lines;
             while(true) {
-                String result = tail(file, 20);
-                String[] lines = result.split("\\u000A");
+                result = tail(file, 20);
+                lines = result.split("\\u000A");
+                chat = "";
+                originalChat = "";
                 for(int i = 0; i < lines.length; i++) {
                     int space = lines[i].indexOf(" ");
-                    String nameAndText = lines[i].substring(space+1, lines[i].length());
-                    //System.out.println(nameAndText);
-                    String translated = translate(nameAndText);
-                    //frame.add(new JLabel(translated));
-                    bw.write(translated); 
+                    nameAndText = lines[i].substring(space+1, lines[i].length());
+                    translated = translate(nameAndText);
+                    if(!translated.contains("{") && !translated.contains("}")) {
+                        chat += nameAndText+"\n";
+                    } else {
+                        TranslatedMessage msg = gson.fromJson(translated, TranslatedMessage.class);
+                        chat += msg.getTranslationText()+"\n";
+                    }
+                    originalChat += nameAndText+"\n";
                 }
-                bw.flush();
+                translationArea.setText(chat);
+                translationArea.update(translationArea.getGraphics());
+                if(originalScrollPane.isVisible()) {
+                    originalArea.setText(originalChat);
+                    originalArea.update(originalArea.getGraphics());
+                }
+                //bw.write(chat); 
+                //bw.flush();
                 Thread.sleep(5000);
             }
 
@@ -76,19 +122,29 @@ public class Translator {
 
     public static String translate(String s) {
         try {
-            HttpClient client = new DefaultHttpClient();
             String sourceLang = "ja";
             String targetLang = "en";
-            String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" 
-                + sourceLang + "&tl=" + targetLang + "&dt=t&q=" + URLEncoder.encode(s, "UTF-8");
-            HttpGet request = new HttpGet(url);
-            request.addHeader("charset", "UTF-8");            
+            //String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" 
+            //    + sourceLang + "&tl=" + targetLang + "&dt=t&q=" + URLEncoder.encode(s, "UTF-8");
+            String url = "http://www.transltr.org/api/translate?text="+URLEncoder.encode(s, "UTF-8")+"&to="
+                +targetLang+"&from="+sourceLang;
+
+            /*HttpClient client = new DefaultHttpClient();
+            HttpGet request = new HttpGet(url);        
             //request.setContentType("application/json; charset=UTF-8");
             HttpResponse response = client.execute(request);
-            String result = EntityUtils.toString(response.getEntity(), "UTF-8");
+            String result = EntityUtils.toString(response.getEntity(), HTTP.UTF_8);
             //BufferedReader rd = new BufferedReader (new InputStreamReader(response.getEntity().getContent(), "UTF-8"));
             //return rd.readLine();
-            return result;
+            return result;*/
+
+            OkHttpClient client = new OkHttpClient();
+            Request request = new Request.Builder()
+                .url(url)
+                .build();
+
+            Response response = client.newCall(request).execute();
+            return response.body().string();
         } catch(Exception e) {
             e.printStackTrace();
         }
